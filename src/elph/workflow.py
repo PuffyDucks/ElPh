@@ -5,6 +5,8 @@ import numpy as np
 import os
 import sys
 import shutil
+import shlex
+import subprocess
 from scipy.constants import h, k
 import elph.utils as ut
 import elph.elphtool as ep
@@ -488,6 +490,72 @@ def run_svd_projection(nqpts, temp=298.0):
     np.savez_compressed(os.path.join(main_path, 'svd','svd_result_local.npz'), **result_l) 
     np.savez_compressed(os.path.join(main_path, 'svd','svd_result_nonlocal.npz'), **result_nl) 
 
-    
-   
-    
+
+def ns_to_cli(ns):
+    parts = []
+    for key, val in vars(ns).items():
+        if val is None:
+            continue
+        opt = "--" + key.replace("_", "-")
+
+        if isinstance(val, bool):
+            # include flag if True (store_true semantics)
+            if val:
+                parts.append(opt)
+        elif isinstance(val, (list, tuple)):
+            parts.append(opt)
+            parts += [shlex.quote(str(x)) for x in val]
+        else:
+            parts += [opt, shlex.quote(str(val))]
+    return " ".join(parts)
+
+def submit_slurm_script(args):
+    if args.workflow == 1:
+        check_j0_dependencies()
+
+    # variables from args for slurm script
+    main_path = os.getcwd()
+    node_type = "gpu" if args.gpu else "cpu"
+    omp_threads = 1 if args.gpu else 2
+    cpu_bind = "--cpu-bind=cores"
+    gpu_bind = "--gpu-bind=none" if args.gpu else ""
+
+    if args.gpu:
+        srun_line = f"srun -n {args.hpc[0]} -c {args.hpc[1]} -G {args.hpc[2]} {cpu_bind} {gpu_bind} elph -l"
+    else:
+        srun_line = "srun -n 128 -c 4 --cpu-bind=cores elph -l"
+
+    # append args to command
+    cli_tail = ns_to_cli(args)
+    if cli_tail:
+        srun_line = f"{srun_line} {cli_tail}"
+
+    slurm_script = [
+        "#!/bin/bash\n",
+        f"#SBATCH -A {args.account}\n",
+        f"#SBATCH -C {node_type}\n",
+        "#SBATCH -q regular\n",
+        "#SBATCH -N 2\n",
+        f"#SBATCH -t {args.time}\n",
+        "#SBATCH -J elph_job\n",
+        "#SBATCH -o elph_job.out\n",
+        "#SBATCH -e elph_job.err\n",
+        "\n",
+        f"module load conda\n",
+        f"conda activate elph\n",
+        f"export OMP_NUM_THREADS={omp_threads}\n",
+        "export OMP_PLACES=threads\n",
+        "export OMP_PROC_BIND=spread\n",
+        "\n",
+        f"cd {main_path}\n",
+        f"{srun_line.strip()}\n"
+    ]
+
+    slurm_filename = "elph.slurm"
+    with open(slurm_filename, "w") as f:
+        f.writelines(slurm_script)
+    try:
+        subprocess.run(f"sbatch {slurm_filename}", shell=True, check=True)
+        print(f"elph.slurm successfully submitted!")
+    except subprocess.CalledProcessError as e:
+        print(f"sbatch failed with exit code {e.returncode}")
