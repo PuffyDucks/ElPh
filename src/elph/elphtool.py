@@ -242,19 +242,14 @@ def unwrap_molecule_dimer(structure_path, supercell_array, nmols):
     unitcell = atoms_unitcell.get_scaled_positions() # Get scaled positions of the atoms in the unit cell
     atoms, full_mols, nearest_idx, _ = neighbor(atoms_unitcell, supercell_array, nmols)
 
-    if nmols == 3:
-        allmols_index = np.concatenate((list(full_mols[nearest_idx[0]]),
-                                        list(full_mols[nearest_idx[1]]),list(full_mols[nearest_idx[2]])))
-    elif nmols == 4:
-        allmols_index = np.concatenate((list(full_mols[nearest_idx[0]]),
-                                        list(full_mols[nearest_idx[1]]),list(full_mols[nearest_idx[2]]),
-                                        list(full_mols[nearest_idx[3]])))
+    allmols_index = np.concatenate([
+        list(full_mols[nearest_idx[i]]) for i in range(nmols)
+    ])
 
     newmol = atoms[allmols_index]
     ase.io.write('allmols.xyz', newmol) # Check the geometry of the molecules
    
     for i in range(nmols):
-        os.makedirs(f'{i+1}', exist_ok=True)
         monomer_path = os.path.join(str(i+1), f"monomer_{i+1}.xyz")
         atoms_id = list(full_mols[nearest_idx[i]])
         mol = atoms[atoms_id]
@@ -263,7 +258,6 @@ def unwrap_molecule_dimer(structure_path, supercell_array, nmols):
 
     pairs = list(combinations(nearest_idx, 2)) 
     for j, letter in enumerate(string.ascii_uppercase[:len(pairs)]):
-        os.makedirs(letter, exist_ok=True)
         dimer_path = os.path.join(letter, f"dimer_{letter}.xyz")
         atoms_id1 = list(full_mols[pairs[j][0]])
         atoms_id2 = list(full_mols[pairs[j][1]])

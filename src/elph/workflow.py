@@ -7,6 +7,9 @@ import sys
 import shutil
 import shlex
 import subprocess
+import string
+from pathlib import Path
+from itertools import combinations
 from scipy.constants import h, k
 import elph.utils as ut
 import elph.elphtool as ep
@@ -76,76 +79,46 @@ def run_j0(basis, func, supercell_array, nmols):
     if not os.path.exists(main_path + "/j/j0_eff.json"): # If j_0.json does not exist, run the simulation
         check_j0_dependencies()
         geometry = getGeometry(main_path) # Get the geometry file
-        os.makedirs(os.path.join(main_path, 'j'), exist_ok=True) # Create a directory for J_ij
+        
+        dimer_pairs = list(combinations(range(1, nmols + 1), 2))  # [(1,2), (1,3), ..., (N-1,N)] 
+        dimer_labels = list(string.ascii_uppercase[:len(dimer_pairs)]) # ['A', 'B', 'C', ...]
 
-        os.makedirs(os.path.join(main_path, 'mapping'), exist_ok=True) # Create a directory for J_ij
+        monomer_dirs = [f"./{i}" for i in range(1, nmols + 1)]  # ["./1", "./2", ..., "./N"]
+        dimer_dirs = [f"./{i}" for i in dimer_labels] # ['./A', './B', './C', ...]
+        path_list = monomer_dirs + dimer_dirs
+
+        os.makedirs(os.path.join(main_path, 'j'), exist_ok=True)
+        os.makedirs(os.path.join(main_path, 'mapping'), exist_ok=True)
+        for path in path_list:
+            os.makedirs(os.path.join(main_path, path), exist_ok=True) # Create a directory for J_ij
+
         ep.unwrap_molecule_dimer(geometry, supercell_array, nmols) # Unwrap the crystal to get single molecule and dimers
         
-        if nmols == 3:
-            path_list = ['./1','./2','./3','./A','./B','./C']
+        for path in path_list:
+            print(f"Running Gaussian on {path}")
+            os.chdir(path)
+            ep.mol_orbital(bset=basis, functional=func) # Run Gaussian to get molecular orbitals
+            os.chdir(main_path)
 
-            for path in path_list:
-                os.chdir(path)
-                ep.mol_orbital(bset=basis, functional=func) # Run Gaussian to get molecular orbitals
-                os.chdir(main_path)
+        j0_eff = {}
+        j0     = {}
 
-            # Calculate J 
-            jA_eff, jA = ep.run_catnip('./1/1.pun', './2/2.pun', './A/A.pun', './1/mo.log', './2/mo.log', './A/mo.log')
-            jB_eff, jB = ep.run_catnip('./1/1.pun', './3/3.pun', './B/B.pun', './1/mo.log', './3/mo.log', './B/mo.log')
-            jC_eff, jC = ep.run_catnip('./2/2.pun', './3/3.pun', './C/C.pun', './2/mo.log', './3/mo.log', './C/mo.log')
+        for (i, j), L in zip(dimer_pairs, dimer_labels):
+            # Files for the two monomers and dimer 
+            pun_i = f"./{i}/{i}.pun"
+            pun_j = f"./{j}/{j}.pun"
+            pun_L = f"./{L}/{L}.pun"
 
-            print(f' Done calculation on J_A = {jA_eff} eV ')
-            print(f' Done calculation on J_B = {jB_eff} eV ')
-            print(f' Done calculation on J_C = {jC_eff} eV ')
-    
-            j0_eff = {'A':f'{jA_eff}', 
-                      'B':f'{jB_eff}',
-                      'C':f'{jC_eff}'
-                    }
-        
-            j0 = {'A':f'{jA}', 
-                  'B':f'{jB}',
-                  'C':f'{jC}'
-                    } 
-            
-        elif nmols == 4:
-            path_list = ['./1','./2','./3','./4','./A','./B','./C','./D','./E','./F'] 
+            mo_i = f"./{i}/mo.log"
+            mo_j = f"./{j}/mo.log"
+            mo_L = f"./{L}/mo.log"
 
-            for path in path_list:
-                os.chdir(path)
-                ep.mol_orbital(bset=basis, functional=func) # Run Gaussian to get molecular orbitals
-                os.chdir(main_path) 
+            j_eff, j_raw = ep.run_catnip(pun_i, pun_j, pun_L, mo_i, mo_j, mo_L)
 
-            jA_eff, jA = ep.run_catnip('./1/1.pun', './2/2.pun', './A/A.pun', './1/mo.log', './2/mo.log', './A/mo.log')
-            jB_eff, jB = ep.run_catnip('./1/1.pun', './3/3.pun', './B/B.pun', './1/mo.log', './3/mo.log', './B/mo.log')
-            jC_eff, jC = ep.run_catnip('./1/1.pun', './4/4.pun', './C/C.pun', './1/mo.log', './4/mo.log', './C/mo.log')
-            jD_eff, jD = ep.run_catnip('./2/2.pun', './3/3.pun', './D/D.pun', './2/mo.log', './3/mo.log', './D/mo.log')
-            jE_eff, jE = ep.run_catnip('./2/2.pun', './4/4.pun', './E/E.pun', './2/mo.log', './4/mo.log', './E/mo.log')
-            jF_eff, jF = ep.run_catnip('./3/3.pun', './4/4.pun', './F/F.pun', './3/mo.log', './4/mo.log', './F/mo.log')
+            print(f" Finished calculation on J_{L} = {j_eff} eV ")
+            j0_eff[L] = f"{j_eff}"
+            j0[L]     = f"{j_raw}"
 
-            print(f' Done calculation on J_A = {jA_eff} eV ')
-            print(f' Done calculation on J_B = {jB_eff} eV ')
-            print(f' Done calculation on J_C = {jC_eff} eV ')
-            print(f' Done calculation on J_D = {jD_eff} eV ')
-            print(f' Done calculation on J_E = {jE_eff} eV ')
-            print(f' Done calculation on J_F = {jF_eff} eV ')
-    
-            j0_eff = {'A':f'{jA_eff}', 
-                      'B':f'{jB_eff}',
-                      'C':f'{jC_eff}',
-                      'D':f'{jD_eff}',
-                      'E':f'{jE_eff}',
-                      'F':f'{jF_eff}' 
-                    }
-        
-            j0 = {'A':f'{jA}', 
-                  'B':f'{jB}',
-                  'C':f'{jC}',
-                  'D':f'{jD}',
-                  'E':f'{jE}',
-                  'F':f'{jF}'
-                    } 
-    
         with open(os.path.join(main_path, 'j', 'j0_eff.json'), 'w', encoding='utf-8') as f1:
             json.dump(j0_eff, f1, ensure_ascii=False, indent=4)
             
