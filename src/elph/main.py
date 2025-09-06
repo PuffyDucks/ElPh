@@ -3,6 +3,13 @@ import elph.utils as ut
 import argparse
 import sys
 
+def validate_args(args):
+    if args.nmol < 3 or args.nmol > 5:
+        raise ValueError(f"{args.nmol} is invalid 'nmol' count. 'nmol' must be between 3 and 5")
+    
+    if args.workflow < 0 or args.workflow > 3:
+        raise ValueError(f"{args.workflow} is not a valid workflow.")
+
 def main():
     """ Main function to run el-ph coupling calculation
     """
@@ -20,18 +27,23 @@ def main():
     parser.add_argument("-a", "--account", type=str, help="Account name for slurm job.")
     parser.add_argument("-time", "--time", type=str, default="01:00:00", help="Time limit for slurm job (hh:mm:ss). Defaults to 1:00:00.")
     parser.add_argument("-g", "--gpu", action="store_true", default=True, help="Run slurm job on GPU.")
-    parser.add_argument("-H", "--hpc", type=int, nargs=3, default=[8,32,8], help="Slurm job flags for srun -n, -c, -G, respectively.")
+    parser.add_argument("-H", "--hpc", type=int, nargs=3, default=[8,32,8], help="Slurm job flag values for srun: -n, -c, and -G, respectively.")
 
     args = parser.parse_args()
+    try:
+        validate_args(args)
+    except Exception as e:
+        ut.throw_error(e)
     
     ut.print_start()
 
-    # run locally 
     try:
+        # submit script
         if not args.local:
             submit_slurm_script(args)
             return
-        
+            
+        # run locally 
         if args.workflow == 1: 
             run_j0(args.basis, args.functional, args.supercell, args.nmol) # Run Gaussian with optimization 
 
