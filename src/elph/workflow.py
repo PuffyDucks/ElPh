@@ -75,55 +75,59 @@ def run_j0(basis, func, supercell_array, nmols):
     Return:
     j_A, j_B, j_C as j0.json and j0_eff.json file
     """    
+    check_j0_dependencies()
+    
     main_path = os.getcwd() # Main directory which contain all subfolders
-    if not os.path.exists(main_path + "/j/j0_eff.json"): # If j_0.json does not exist, run the simulation
-        check_j0_dependencies()
-        geometry = getGeometry(main_path) # Get the geometry file
+    geometry = getGeometry(main_path) # Get the geometry file
+    
+    monomer_labels = range(1, nmols + 1) # [1, 2, ..., N]
+    dimer_pairs = list(combinations(monomer_labels, 2))  # [(1,2), (1,3), ..., (N-1,N)] 
+    dimer_labels = list(string.ascii_uppercase[:len(dimer_pairs)]) # ['A', 'B', 'C', ...]
+
+    monomer_dirs = [f"./{i}" for i in monomer_labels]  # ["./1", "./2", ..., "./N"]
+    dimer_dirs = [f"./{i}" for i in dimer_labels] # ['./A', './B', './C', ...]
+    path_list = monomer_dirs + dimer_dirs
+
+    # Create directories
+    os.makedirs(os.path.join(main_path, 'j'), exist_ok=True)
+    os.makedirs(os.path.join(main_path, 'mapping'), exist_ok=True)
+    for path in path_list:
+        os.makedirs(os.path.join(main_path, path), exist_ok=True) # Create a directory for J_ij
+
+    # Get files for monomers and dimers
+    ep.unwrap_molecule_dimer(geometry, supercell_array, nmols) # Unwrap the crystal to get single molecule and dimers
+    
+    # Run Gaussian to get molecular orbitals
+    for path in path_list:
+        print(f"Running Gaussian on {path}")
+        os.chdir(path)
+        ep.mol_orbital(bset=basis, functional=func)
+        os.chdir(main_path)
+
+    # Run catnip to calculate transfer integrals
+    j0     = {}
+    j0_eff = {}
+    for (i, j), L in zip(dimer_pairs, dimer_labels):
+        # Files for the two monomers and dimer 
+        pun_i = f"./{i}/{i}.pun"
+        pun_j = f"./{j}/{j}.pun"
+        pun_L = f"./{L}/{L}.pun"
+
+        mo_i = f"./{i}/mo.log"
+        mo_j = f"./{j}/mo.log"
+        mo_L = f"./{L}/mo.log"
+
+        j_eff, j_raw = ep.run_catnip(pun_i, pun_j, pun_L, mo_i, mo_j, mo_L)
+
+        print(f"Finished calculation J_{L} = {j_eff} eV ")
+        j0_eff[L] = f"{j_eff}"
+        j0[L]     = f"{j_raw}"
+
+    with open(os.path.join(main_path, 'j', 'j0_eff.json'), 'w', encoding='utf-8') as f1:
+        json.dump(j0_eff, f1, ensure_ascii=False, indent=4)
         
-        dimer_pairs = list(combinations(range(1, nmols + 1), 2))  # [(1,2), (1,3), ..., (N-1,N)] 
-        dimer_labels = list(string.ascii_uppercase[:len(dimer_pairs)]) # ['A', 'B', 'C', ...]
-
-        monomer_dirs = [f"./{i}" for i in range(1, nmols + 1)]  # ["./1", "./2", ..., "./N"]
-        dimer_dirs = [f"./{i}" for i in dimer_labels] # ['./A', './B', './C', ...]
-        path_list = monomer_dirs + dimer_dirs
-
-        os.makedirs(os.path.join(main_path, 'j'), exist_ok=True)
-        os.makedirs(os.path.join(main_path, 'mapping'), exist_ok=True)
-        for path in path_list:
-            os.makedirs(os.path.join(main_path, path), exist_ok=True) # Create a directory for J_ij
-
-        ep.unwrap_molecule_dimer(geometry, supercell_array, nmols) # Unwrap the crystal to get single molecule and dimers
-        
-        for path in path_list:
-            print(f"Running Gaussian on {path}")
-            os.chdir(path)
-            ep.mol_orbital(bset=basis, functional=func) # Run Gaussian to get molecular orbitals
-            os.chdir(main_path)
-
-        j0_eff = {}
-        j0     = {}
-
-        for (i, j), L in zip(dimer_pairs, dimer_labels):
-            # Files for the two monomers and dimer 
-            pun_i = f"./{i}/{i}.pun"
-            pun_j = f"./{j}/{j}.pun"
-            pun_L = f"./{L}/{L}.pun"
-
-            mo_i = f"./{i}/mo.log"
-            mo_j = f"./{j}/mo.log"
-            mo_L = f"./{L}/mo.log"
-
-            j_eff, j_raw = ep.run_catnip(pun_i, pun_j, pun_L, mo_i, mo_j, mo_L)
-
-            print(f" Finished calculation on J_{L} = {j_eff} eV ")
-            j0_eff[L] = f"{j_eff}"
-            j0[L]     = f"{j_raw}"
-
-        with open(os.path.join(main_path, 'j', 'j0_eff.json'), 'w', encoding='utf-8') as f1:
-            json.dump(j0_eff, f1, ensure_ascii=False, indent=4)
-            
-        with open(os.path.join(main_path, 'j', 'j0.json'), 'w', encoding='utf-8') as f2:
-            json.dump(j0, f2, ensure_ascii=False, indent=4)
+    with open(os.path.join(main_path, 'j', 'j0.json'), 'w', encoding='utf-8') as f2:
+        json.dump(j0, f2, ensure_ascii=False, indent=4)
 
 def run_lambda(basis, func):
     """ Run onsite energy calculation using normal mode analysis to get reorganization energy &
