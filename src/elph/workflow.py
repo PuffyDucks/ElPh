@@ -27,6 +27,29 @@ def getGeometry(path):
     
     return file[0]
 
+def check_j0_dependencies():
+    main_path = os.getcwd()
+    phonon_path = main_path + "/2-phonons"
+    try:
+        getGeometry(main_path) # Get the geometry file
+
+    except FileNotFoundError:
+        ut.throw_error("Structure (.cif; POSCAR ...) file not found in the current directory. Exiting.") 
+
+    if not os.path.exists(main_path + "/FORCE_SETS"):
+        if os.path.exists(phonon_path + "/FORCE_SETS"):
+            print(f"'FORCE_SETS' not found in {main_path}, but found in '2-phonons'. Copying...")
+            shutil.copy(phonon_path + "/FORCE_SETS", main_path + "/FORCE_SETS")
+        else:
+            ut.throw_error("'FORCE_SETS' file not found in the current directory or in '2-phonons'. Exiting.")
+
+    if not os.path.exists(main_path + "/phonopy_disp.yaml"):
+        if os.path.exists(phonon_path + "/phonopy_disp.yaml"):
+            print(f"'phonopy_disp.yaml' not found in {main_path}, but found in '2-phonons'. Copying...")
+            shutil.copy(phonon_path + "/phonopy_disp.yaml", main_path + "/phonopy_disp.yaml")
+        else:
+            ut.throw_error("'phonopy_disp.yaml' file not found in the current directory or in '2-phonons'. Exiting.")
+
 def run_j0(basis, func, supercell_array, nmols):
     """ Main function for running Gaussian and Catnip to get transfer integral J_0
     Args:
@@ -48,37 +71,13 @@ def run_j0(basis, func, supercell_array, nmols):
     j_A, j_B, j_C as j0.json and j0_eff.json file
     """    
     main_path = os.getcwd() # Main directory which contain all subfolders
-    phonon_path = main_path + "/2-phonons"
-    j0_file = glob.glob(os.path.join(main_path, 'j', 'j0_eff.json'))
-    xyz_file = glob.glob(os.path.join(main_path, '1', 'monomer_1.xyz'))
-    if not j0_file: # If j_0.json is not exists, run the following simulation
-        try:
-            geometry = getGeometry(main_path) # Get the geometry file
-            os.makedirs(os.path.join(main_path, 'j'), exist_ok=True) # Create a directory for J_ij
+    if not os.path.exists(main_path + "/j/j0_eff.json"): # If j_0.json does not exist, run the simulation
+        check_j0_dependencies()
+        geometry = getGeometry(main_path) # Get the geometry file
+        os.makedirs(os.path.join(main_path, 'j'), exist_ok=True) # Create a directory for J_ij
 
-        except FileNotFoundError:
-            ut.print_error("Structure (.cif; POSCAR ...) file not found in the current directory. Exiting.") 
-            sys.exit(1)
-
-        if not os.path.exists(main_path + "/FORCE_SETS"):
-            if os.path.exists(phonon_path + "/FORCE_SETS"):
-                print(f"'FORCE_SETS' not found in {main_path}, but found in '2-phonons'. Copying...")
-                shutil.copy(phonon_path + "/FORCE_SETS", main_path + "/FORCE_SETS")
-            else:
-                ut.print_error("'FORCE_SETS' file not found in the current directory or in '2-phonons'. Exiting.")
-                sys.exit(1)
-
-        if not os.path.exists(main_path + "/phonopy_disp.yaml"):
-            if os.path.exists(phonon_path + "/phonopy_disp.yaml"):
-                print(f"'phonopy_disp.yaml' not found in {main_path}, but found in '2-phonons'. Copying...")
-                shutil.copy(phonon_path + "/phonopy_disp.yaml", main_path + "/phonopy_disp.yaml")
-            else:
-                ut.print_error("'phonopy_disp.yaml' file not found in the current directory or in '2-phonons'. Exiting.")
-                sys.exit(1)
-
-        if not xyz_file:
-            os.makedirs(os.path.join(main_path, 'mapping'), exist_ok=True) # Create a directory for J_ij
-            ep.unwrap_molecule_dimer(geometry, supercell_array, nmols) # Unwrap the crystal to get single molecule and dimers
+        os.makedirs(os.path.join(main_path, 'mapping'), exist_ok=True) # Create a directory for J_ij
+        ep.unwrap_molecule_dimer(geometry, supercell_array, nmols) # Unwrap the crystal to get single molecule and dimers
         
         if nmols == 3:
             path_list = ['./1','./2','./3','./A','./B','./C']

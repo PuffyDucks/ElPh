@@ -40,5 +40,4 @@ def main():
                 ut.print_end()
 
     except KeyboardInterrupt:
-        ut.print_error("Interrupted by user!")
-        sys.exit(0)
+        ut.throw_error("Interrupted by user!")

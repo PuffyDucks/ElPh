@@ -58,8 +58,7 @@ def phonon(natoms, mesh):
         print(" FORCE_SETS already exists, continue calculation! ")
     
     else:
-        ut.print_error(" FORCE_SETS file is missing ")
-        sys.exit(1)
+        ut.throw_error(" FORCE_SETS file is missing ")
     
     phonon = phonopy.load('phonopy_disp.yaml')
     phonon.run_mesh(mesh,with_eigenvectors=True)
@@ -150,7 +149,7 @@ def neighbor(atoms_unitcell, supercell_array, nmols):
             break
         
         attempt += 1
-        ut.print_error(f"No molecules matched the expected atom count of {natoms_in_cell / nmol_in_cell}. Increasing the cutoff distance and try again.")
+        print(f"No molecules matched the expected atom count of {natoms_in_cell / nmol_in_cell}. Increasing the cutoff distance and try again.")
         cutoff_h = [np.float64(x+0.03*attempt) if x == 0.31 else x for x in natural_cutoffs(atoms)] # increase Hydrogen cutoff
         cutoff_c = [np.float64(x+0.03*attempt) if x == 0.76 else x for x in cutoff_h] # increase Carbon cutoff
         cutoff_n = [np.float64(x+0.03*attempt) if x == 0.71 else x for x in cutoff_c] # increase Nitrogen cutoff
@@ -159,8 +158,7 @@ def neighbor(atoms_unitcell, supercell_array, nmols):
         cutoff = [np.float64(x+0.03*attempt) if x == 0.57 else x for x in cutoff_si] # increase flourine cutoff
 
     if not full_mols:
-        ut.print_error("Failed to find any full molecules after all retries. Exiting.")
-        sys.exit(1)
+        ut.throw_error("Failed to find any full molecules after all retries. Exiting.")
 
     coms = [] 
     for mol_indices in full_mols: # calculate the center of mass for each full molecule
@@ -256,22 +254,22 @@ def unwrap_molecule_dimer(structure_path, supercell_array, nmols):
     ase.io.write('allmols.xyz', newmol) # Check the geometry of the molecules
    
     for i in range(nmols):
-        os.mkdir(f'{i+1}')
-        name_mol = os.path.join(str(i+1), f"monomer_{i+1}.xyz")
+        os.makedirs(f'{i+1}', exist_ok=True)
+        monomer_path = os.path.join(str(i+1), f"monomer_{i+1}.xyz")
         atoms_id = list(full_mols[nearest_idx[i]])
         mol = atoms[atoms_id]
         mol.set_pbc((False, False, False))
-        ase.io.write(name_mol, mol)
+        ase.io.write(monomer_path, mol)
 
     pairs = list(combinations(nearest_idx, 2)) 
     for j, letter in enumerate(string.ascii_uppercase[:len(pairs)]):
-        os.mkdir(letter)
-        name_dimer = os.path.join(letter, f"dimer_{letter}.xyz")
+        os.makedirs(letter, exist_ok=True)
+        dimer_path = os.path.join(letter, f"dimer_{letter}.xyz")
         atoms_id1 = list(full_mols[pairs[j][0]])
         atoms_id2 = list(full_mols[pairs[j][1]])
         dimer = atoms[atoms_id1] + atoms[atoms_id2]
         dimer.set_pbc((False, False, False))
-        ase.io.write(name_dimer, dimer) 
+        ase.io.write(dimer_path, dimer) 
 
         mapping = mapping_atom(dimer.get_positions(), cell, unitcell, tol=1e-4)
         np.savez_compressed(os.path.join('mapping', f'map_{letter}.npz'), mapping=mapping) # Save the mapping of atoms
