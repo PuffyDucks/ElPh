@@ -290,7 +290,7 @@ def create_displacement(nmols, delta=0.01):
     delta (float): Magnitude of displacement in Angstrom (Defaults to 0.01A)
     nmols (int): Number of molecules that are extracted (Defaults to 3)
     """
-    main_path = os.getcwd()
+    base_path = os.getcwd()
     
     # List of folders to create
     if nmols == 3:
@@ -324,7 +324,7 @@ def create_displacement(nmols, delta=0.01):
             ase.io.write(disp_name+'.xyz', disp_atoms)
             os.chdir('../..')
 	   
-        os.chdir(main_path) 
+        os.chdir(base_path) 
 
 def gaussian_opt(atoms, bset, label, functional, ncharge=0):
     """ Run Gaussian simulation to get the onsite energy for the system
