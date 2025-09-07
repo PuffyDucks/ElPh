@@ -654,27 +654,29 @@ def mol_orbital(bset, functional, overwrite=False, atoms=None):
     .pun file which contains molecular orbital for the cacluation later for J 
     .log file output file from Gaussian
     """
-    base_path = Path.cwd()
+    base_path = Path.cwd()    
+    mo_log_path = base_path / "mo.log"
+    pun_path = base_path / f"{base_path.name}.pun"
+
+    if (mo_log_path.exists() and pun_path.exists()) and not overwrite:
+        print(f"File already exists at {mo_log_path} and {pun_path}")
+        return
+
     if atoms is None:
         geometry = getGeometry(base_path)
         atoms = ase.io.read(geometry)
+    atoms.calc = Gaussian(mem='18GB',
+                            nprocshared=12,
+                            label='mo',
+                            save=None,
+                            method=functional[1],
+                            basis=bset[1],  
+                            scf='tight',
+                            pop='full',
+                            extra='nosymm punch=mo EmpiricalDispersion=GD3BJ iop(3/33=1)') # iop(3/33=1) output one-electron integrals to log file.
+    atoms.get_potential_energy()
+    (base_path / "fort.7").rename(pun_path)
     
-    mo_log_path = base_path / "mo.log"
-    pun_path = base_path / f"{base_path.name}.pun"
-    if not mo_log_path.exists() or not pun_path.exists() or overwrite:
-        atoms.calc = Gaussian(mem='18GB',
-                                nprocshared=12,
-                                label='mo',
-                                save=None,
-                                method=functional[1],
-                                basis=bset[1],  
-                                scf='tight',
-                                pop='full',
-                                extra='nosymm punch=mo EmpiricalDispersion=GD3BJ iop(3/33=1)') # iop(3/33=1) output one-electron integrals to log file.
-        atoms.get_potential_energy()
-        (base_path / "fort.7").rename(pun_path)
-    else:
-        print(f"File already exists at {mo_log_path} and {pun_path}")
 
 def run_catnip(path1, path2, path3, path4, path5, path6):
     """ Run Catnip to calculate the transfer integral
