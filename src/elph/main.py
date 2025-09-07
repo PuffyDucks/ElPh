@@ -15,6 +15,7 @@ def main():
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("-w", "--workflow", type=int, required=True, help="Workflow number to run.")
+    parser.add_argument("--overwrite", action='store_true', default=False, help="Overwrite existing files and directories.")
     parser.add_argument("-q", "--mesh", type=int, default=[8,8,8], nargs=3, help="Defining a mesh grid. Defaults to [8,8,8].")
     parser.add_argument("-b", "--basis", type=str, default=['6-31G**','6-311G**'], nargs=2, help="Gaussian basis sets, first:local; second:non-local")
     parser.add_argument("-f", "--functional", type=str, default=['b3lyp','b3lyp'], nargs=2, help="Gaussian functional, first:local; second:non-local")
@@ -45,7 +46,7 @@ def main():
             
         # run locally 
         if args.workflow == 1: 
-            run_j0(args.basis, args.functional, args.supercell, args.nmol) # Run Gaussian with optimization 
+            run_j0(args.basis, args.functional, args.supercell, args.nmol, args.overwrite) # Run Gaussian with optimization 
 
         elif args.workflow == 2: # Run workflow 2 (need to finish workflow 1 first)
             run_lambda(args.basis, args.functional)

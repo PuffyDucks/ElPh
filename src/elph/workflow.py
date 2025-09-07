@@ -16,46 +16,64 @@ import elph.elphtool as ep
 import elph.svdprojection as svd
 from elph.mobility import Mobility
 
-def getGeometry(path):
-    """ Using glob function in python to find the structure
-    file in the current path
-    The type of the structure files: ".cif"
-    Args:
-    path: The current directory (use os.getcwd())
-    ----------------------------------------------
-    Return:
-    file: The structure file in the path
+def getGeometry(path: Path):
     """
-    file = glob.glob(path + "/POSCAR") + glob.glob(path + "/*.cif")
-    if len(file) == 0:
-        raise FileNotFoundError
+    Find the structure file in the given path.
+    Looks for 'POSCAR' or any '*.cif' file.
+    Args:
+        path (Path): The current directory (Path.cwd()).
+    Returns:
+        Path: The first structure file found.
+    Raises:
+        FileNotFoundError: If no structure file is found.
+    """
+    path = Path(path)  # Ensure Path object
+        
+    poscar = path / "POSCAR"
+    if poscar.exists():
+        return poscar
     
-    return file[0]
+    # Get first cif file
+    cif_files = list(path.glob("*.cif"))
+    if cif_files:
+        return cif_files[0]
+
+    raise FileNotFoundError(f"No structure file found in {path} (POSCAR or .cif).")
+    
+def can_write(path : Path, overwrite=False):
+    return (overwrite or not path.exists)
 
 def check_j0_dependencies():
-    base_path = os.getcwd()
-    phonon_path = base_path + "/2-phonons"
-    try:
-        getGeometry(base_path) # Get the geometry file
+    base_path = Path.cwd()
+    phonon_path = base_path / "2-phonons"
 
+    # Geometry file
+    try:
+        getGeometry(base_path)
     except FileNotFoundError:
         ut.throw_error("Structure (.cif; POSCAR ...) file not found in the current directory. Exiting.") 
 
-    if not os.path.exists(base_path + "/FORCE_SETS"):
-        if os.path.exists(phonon_path + "/FORCE_SETS"):
+    # FORCE_SETS
+    force_sets = base_path / "FORCE_SETS"
+    phonon_force_sets = phonon_path / "FORCE_SETS"
+    if not force_sets.exists():
+        if phonon_force_sets.exists():
             print(f"'FORCE_SETS' not found in {base_path}, but found in '2-phonons'. Copying...")
-            shutil.copy(phonon_path + "/FORCE_SETS", base_path + "/FORCE_SETS")
+            shutil.copy(phonon_force_sets, force_sets)
         else:
             ut.throw_error("'FORCE_SETS' file not found in the current directory or in '2-phonons'. Exiting.")
 
-    if not os.path.exists(base_path + "/phonopy_disp.yaml"):
-        if os.path.exists(phonon_path + "/phonopy_disp.yaml"):
+    # phonopy_disp.yaml
+    disp_yaml = base_path / "phonopy_disp.yaml"
+    phonon_disp_yaml = phonon_path / "phonopy_disp.yaml"
+    if not disp_yaml.exists():
+        if phonon_disp_yaml.exists():
             print(f"'phonopy_disp.yaml' not found in {base_path}, but found in '2-phonons'. Copying...")
-            shutil.copy(phonon_path + "/phonopy_disp.yaml", base_path + "/phonopy_disp.yaml")
+            shutil.copy(phonon_disp_yaml, disp_yaml)
         else:
             ut.throw_error("'phonopy_disp.yaml' file not found in the current directory or in '2-phonons'. Exiting.")
 
-def run_j0(basis, func, supercell_array, nmols):
+def run_j0(basis, func, supercell_array, nmols, overwrite):
     """ Main function for running Gaussian and Catnip to get transfer integral J_0
     Args:
     supercell_array (tuple): The supercell matrix
@@ -74,48 +92,48 @@ def run_j0(basis, func, supercell_array, nmols):
     ---------------------------- 
     Return:
     j_A, j_B, j_C as j0.json and j0_eff.json file
-    """    
-    check_j0_dependencies()
+    """
+    base_path = Path.cwd()  # Main directory which contains all subfolders
+
+    check_j0_dependencies()    
+    geometry = getGeometry(base_path)  # Get the geometry file
     
-    base_path = os.getcwd() # Main directory which contain all subfolders
-    geometry = getGeometry(base_path) # Get the geometry file
+    monomer_labels = [str(i) for i in range(1, nmols + 1)]  # ["1", "2", ..., "N"]
+    dimer_pairs    = list(combinations(monomer_labels, 2))  # [(1,2), (1,3), ..., (N-1,N)] 
+    dimer_labels   = list(string.ascii_uppercase[:len(dimer_pairs)])  # ['A', 'B', 'C', ...]
+
+    monomer_dirs   = [base_path / i for i in monomer_labels]  # [Path("./1"), Path("./2"), ...]
+    dimer_dirs     = [base_path / L for L in dimer_labels]      # [Path("./A"), Path("./B"), ...]
+    dir_list       = monomer_dirs + dimer_dirs
+
+    # --- Create directories ---
+    (base_path / 'j').mkdir(exist_ok=True)
+    (base_path / 'mapping').mkdir(exist_ok=True)
+    for dir_path in dir_list:
+        dir_path.mkdir(exist_ok=True)
+
+    # --- Unwrap crystal monomer and dimer files ---
+    ep.unwrap_molecule_dimer(geometry, supercell_array, nmols, overwrite=overwrite)
     
-    monomer_labels = range(1, nmols + 1) # [1, 2, ..., N]
-    dimer_pairs = list(combinations(monomer_labels, 2))  # [(1,2), (1,3), ..., (N-1,N)] 
-    dimer_labels = list(string.ascii_uppercase[:len(dimer_pairs)]) # ['A', 'B', 'C', ...]
+    # --- Run Gaussian for molecular orbitals ---
+    for dir_path in dir_list:
+        print(f"Running Gaussian in directory {dir_path.name}")
+        os.chdir(dir_path)
+        ep.mol_orbital(basis, func, overwrite=overwrite)
+    os.chdir(base_path)
 
-    monomer_dirs = [f"./{i}" for i in monomer_labels]  # ["./1", "./2", ..., "./N"]
-    dimer_dirs = [f"./{i}" for i in dimer_labels] # ['./A', './B', './C', ...]
-    path_list = monomer_dirs + dimer_dirs
-
-    # Create directories
-    os.makedirs(os.path.join(base_path, 'j'), exist_ok=True)
-    os.makedirs(os.path.join(base_path, 'mapping'), exist_ok=True)
-    for path in path_list:
-        os.makedirs(os.path.join(base_path, path), exist_ok=True) # Create a directory for J_ij
-
-    # Get files for monomers and dimers
-    ep.unwrap_molecule_dimer(geometry, supercell_array, nmols) # Unwrap the crystal to get single molecule and dimers
-    
-    # Run Gaussian to get molecular orbitals
-    for path in path_list:
-        print(f"Running Gaussian on {path}")
-        os.chdir(path)
-        ep.mol_orbital(bset=basis, functional=func)
-        os.chdir(base_path)
-
-    # Run catnip to calculate transfer integrals
+    # --- Run catnip for transfer integrals ---
     j0     = {}
     j0_eff = {}
     for (i, j), L in zip(dimer_pairs, dimer_labels):
         # Files for the two monomers and dimer 
-        pun_i = f"./{i}/{i}.pun"
-        pun_j = f"./{j}/{j}.pun"
-        pun_L = f"./{L}/{L}.pun"
+        pun_i = base_path / i / f"{i}.pun"
+        pun_j = base_path / j / f"{j}.pun"
+        pun_L = base_path / L / f"{L}.pun"
 
-        mo_i = f"./{i}/mo.log"
-        mo_j = f"./{j}/mo.log"
-        mo_L = f"./{L}/mo.log"
+        mo_i = base_path / i / "mo.log"
+        mo_j = base_path / j / "mo.log"
+        mo_L = base_path / L / "mo.log"
 
         j_eff, j_raw = ep.run_catnip(pun_i, pun_j, pun_L, mo_i, mo_j, mo_L)
 
@@ -123,11 +141,20 @@ def run_j0(basis, func, supercell_array, nmols):
         j0_eff[L] = f"{j_eff}"
         j0[L]     = f"{j_raw}"
 
-    with open(os.path.join(base_path, 'j', 'j0_eff.json'), 'w', encoding='utf-8') as f1:
-        json.dump(j0_eff, f1, ensure_ascii=False, indent=4)
+    # --- Dump JSONs ---
+    j0_eff_path = base_path / 'j' / 'j0_eff.json'
+    if not j0_eff_path.exists() or overwrite:
+        with j0_eff_path.open('w', encoding='utf-8') as f1:
+            json.dump(j0_eff, f1, ensure_ascii=False, indent=4)
+    else:
+        print(f"File already exists at {j0_eff_path}")
         
-    with open(os.path.join(base_path, 'j', 'j0.json'), 'w', encoding='utf-8') as f2:
-        json.dump(j0, f2, ensure_ascii=False, indent=4)
+    j0_path = base_path / 'j' / 'j0.json'
+    if not j0_path.exists() or overwrite:
+        with j0_path.open('w', encoding='utf-8') as f2:
+            json.dump(j0, f2, ensure_ascii=False, indent=4)
+    else:
+        print(f"File already exists at {j0_path}")
 
 def run_lambda(basis, func):
     """ Run onsite energy calculation using normal mode analysis to get reorganization energy &
