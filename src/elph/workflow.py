@@ -120,8 +120,15 @@ def run_j0(basis, func, supercell_array, nmols, overwrite):
     os.chdir(base_path)
 
     # --- Run catnip for transfer integrals ---
-    j0     = {}
+    j0_eff_path = base_path / 'j' / 'j0_eff.json'
+    j0_path = base_path / 'j' / 'j0.json'
     j0_eff = {}
+    j0     = {}
+
+    if (j0_eff_path.exists() and j0_path.exists()) and not overwrite:
+        print(f"File already exists at {j0_eff_path} and {j0_path}")
+        return
+
     for (i, j), L in zip(dimer_pairs, dimer_labels):
         # Files for the two monomers and dimer 
         pun_i = base_path / i / f"{i}.pun"
@@ -139,17 +146,17 @@ def run_j0(basis, func, supercell_array, nmols, overwrite):
         j0[L]     = f"{j_raw}"
 
     # --- Dump JSONs ---
-    j0_eff_path = base_path / 'j' / 'j0_eff.json'
     if not j0_eff_path.exists() or overwrite:
         with j0_eff_path.open('w', encoding='utf-8') as f1:
             json.dump(j0_eff, f1, ensure_ascii=False, indent=4)
+            print(f"j0_eff saved to {j0_eff_path}")
     else:
         print(f"File already exists at {j0_eff_path}")
         
-    j0_path = base_path / 'j' / 'j0.json'
     if not j0_path.exists() or overwrite:
         with j0_path.open('w', encoding='utf-8') as f2:
             json.dump(j0, f2, ensure_ascii=False, indent=4)
+            print(f"j0 saved to {j0_path}")
     else:
         print(f"File already exists at {j0_path}")
 
