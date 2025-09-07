@@ -40,9 +40,6 @@ def getGeometry(path: Path):
 
     raise FileNotFoundError(f"No structure file found in {path} (POSCAR or .cif).")
     
-def can_write(path : Path, overwrite=False):
-    return (overwrite or not path.exists)
-
 def check_j0_dependencies():
     base_path = Path.cwd()
     phonon_path = base_path / "2-phonons"
@@ -495,13 +492,12 @@ def run_svd_projection(nqpts, temp=298.0):
     np.savez_compressed(os.path.join(base_path, 'svd','svd_result_nonlocal.npz'), **result_nl) 
 
 
-def ns_to_cli(ns):
+def args_format(args):
     parts = []
-    for key, val in vars(ns).items():
+    for key, val in vars(args).items():
         if val is None:
             continue
         opt = "--" + key.replace("_", "-")
-
         if isinstance(val, bool):
             # include flag if True (store_true semantics)
             if val:
@@ -518,21 +514,22 @@ def submit_slurm_script(args):
         check_j0_dependencies()
 
     # variables from args for slurm script
-    base_path = os.getcwd()
+    base_path = Path.cwd()
     node_type = "gpu" if args.gpu else "cpu"
     omp_threads = 1 if args.gpu else 2
     cpu_bind = "--cpu-bind=cores"
     gpu_bind = "--gpu-bind=none" if args.gpu else ""
+    job_name = f"elph_{base_path.name}_w{args.workflow}"
 
     if args.gpu:
-        srun_line = f"srun -n {args.hpc[0]} -c {args.hpc[1]} -G {args.hpc[2]} {cpu_bind} {gpu_bind} elph -l"
+        srun_line = f"srun -n {args.hpc[0]} -c {args.hpc[1]} -G {args.hpc[2]} {cpu_bind} {gpu_bind} \\\n     elph -l"
     else:
-        srun_line = "srun -n 128 -c 4 --cpu-bind=cores elph -l"
+        srun_line = "srun -n 128 -c 4 --cpu-bind=cores \\\n     elph -l"
 
     # append args to command
-    cli_tail = ns_to_cli(args)
-    if cli_tail:
-        srun_line = f"{srun_line} {cli_tail}"
+    script_tail = args_format(args)
+    if script_tail:
+        srun_line = f"{srun_line} {script_tail}"
 
     slurm_script = [
         "#!/bin/bash\n",
@@ -541,9 +538,9 @@ def submit_slurm_script(args):
         "#SBATCH -q regular\n",
         "#SBATCH -N 2\n",
         f"#SBATCH -t {args.time}\n",
-        "#SBATCH -J elph_job\n",
-        "#SBATCH -o elph_job.out\n",
-        "#SBATCH -e elph_job.err\n",
+        f"#SBATCH -J {job_name}\n",
+        f"#SBATCH -o {job_name}_%j.out\n",
+        f"#SBATCH -e {job_name}_%j.err\n",
         "\n",
         f"module load conda\n",
         f"conda activate elph\n",
@@ -555,11 +552,11 @@ def submit_slurm_script(args):
         f"{srun_line.strip()}\n"
     ]
 
-    slurm_filename = "elph.slurm"
-    with open(slurm_filename, "w") as f:
+    slurm_path = base_path / f"{job_name}.slurm"
+    with open(slurm_path, "w") as f:
         f.writelines(slurm_script)
     try:
-        subprocess.run(f"sbatch {slurm_filename}", shell=True, check=True)
-        print(f"elph.slurm successfully submitted!")
+        subprocess.run(f"sbatch {slurm_path}", shell=True, check=True)
+        print(f"{job_name}.slurm successfully submitted!")
     except subprocess.CalledProcessError as e:
-        print(f"sbatch failed with exit code {e.returncode}")
+        print(f"sbatch {job_name} failed with exit code {e.returncode}")

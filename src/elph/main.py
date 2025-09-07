@@ -26,7 +26,7 @@ def main():
     # parser.add_argument("-homo", "--homo", type=str, default=True, help="P-type: HOMO; N-type: LUMO")
     parser.add_argument("-l", "--local", action='store_true', default=False, help="Run ElPh on local machine instead of submitting a slurm script.")
     parser.add_argument("-a", "--account", type=str, help="Account name for slurm job.")
-    parser.add_argument("-time", "--time", type=str, default="01:00:00", help="Time limit for slurm job (hh:mm:ss). Defaults to 1:00:00.")
+    parser.add_argument("-time", "--time", type=str, default="02:00:00", help="Time limit for slurm job (hh:mm:ss). Defaults to 1:00:00.")
     parser.add_argument("-g", "--gpu", action="store_true", default=True, help="Run slurm job on GPU.")
     parser.add_argument("-H", "--hpc", type=int, nargs=3, default=[8,32,8], help="Slurm job flag values for srun: -n, -c, and -G, respectively.")
 
